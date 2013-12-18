@@ -117,14 +117,13 @@ public class SegmentedSquareButton extends Canvas {
     this.heightHint = heightHint;
 
     setDefaultColors();
-    addListeners();
-
     for(SegmentedSquareButtonItem item : items) {
       this.items.add(item);
+      item.setParent(this);
     }
     initializeSegments();
+    addListeners();
   }
-
 
   protected void widgetDisposed(DisposeEvent e) {
     // TODO clean up here (listeners?)
@@ -149,7 +148,10 @@ public class SegmentedSquareButton extends Canvas {
       @Override
       public void mouseDown(MouseEvent mouseEvent) {
         if (mouseEvent.button == 1) {
-          SegmentedSquareButton.this.setClickedColor();
+          SegmentedSquareButtonItem item = findItem(mouseEvent.x, mouseEvent.y);
+          if(item != null) {
+            item.setClickedColor();
+          }
         }
         super.mouseDown(mouseEvent);
       }
@@ -335,6 +337,7 @@ public class SegmentedSquareButton extends Canvas {
 
 
   void initializeSegments() {
+    log.info("Initializing segments!");
     /*
      * Three cases:
      *  1) Segment only (easiest to calculate)
@@ -388,7 +391,7 @@ public class SegmentedSquareButton extends Canvas {
       }
     }
 
-    return new Point(maxHeight, width);
+    return new Point(width, maxHeight);
   }
 
 
@@ -400,63 +403,27 @@ public class SegmentedSquareButton extends Canvas {
       defaultCurrentFontColor = defaultFontColor;
     }
 
-    Point segmentSize = computeSize();
+    Point segmentGroupSize = computeSize();
 
     // with certain layouts, the width is sometimes 1 pixel too wide
-    if (segmentSize.x > getClientArea().width) {
-      segmentSize.x = getClientArea().width;
+    if (segmentGroupSize.x > getClientArea().width) {
+      segmentGroupSize.x = getClientArea().width;
     }
 
-    Rectangle segmentRectangle = new Rectangle(0, 0, segmentSize.x, segmentSize.y);
+    Rectangle segmentRectangle = new Rectangle(0, 0, segmentGroupSize.x, segmentGroupSize.y);
 
     GC gc = paintEvent.gc;
-
-    //try and enable nice looking fonts on windows
-    try {
-      gc.setAdvanced(true);
-      gc.setAntialias(SWT.ON);
-      gc.setTextAntialias(SWT.ON);
-      gc.setInterpolation(SWT.HIGH);
-    } catch (SWTException exception) {
-      log.warning("Couldn't get nice fonts: " + exception.getMessage());
-    }
 
     SegmentedSquareButtonItem lastItem = null;
     for(SegmentedSquareButtonItem item : items) {
       item.paintControl(lastItem, paintEvent);
+      lastItem = item;
     }
 
-    // add transparency by making the canvas background the same as
-    // the parent background (only needed for rounded corners)
-    if (roundedCorners) {
-      gc.setBackground(getParent().getBackground());
-      gc.fillRectangle(segmentRectangle);
-    }
-
-    // draw the background color of the inside of the button. There's no such
-    // thing as a rounded gradient rectangle in SWT, so we need to draw a filled
-    // rectangle that's just the right size to fit inside a rounded rectangle
-    // without spilling out at the corners
-    gc.setForeground(this.defaultCurrentColor);
-    gc.setBackground(this.defaultCurrentColor2);
-
-
-    Rectangle fillRectangle = (roundedCorners) ? new Rectangle(buttonRectangle.x + 1, buttonRectangle.y + 1, buttonRectangle.width - 2, buttonRectangle.height - 3) :
-      new Rectangle(buttonRectangle.x + 1, buttonRectangle.y + 1, buttonRectangle.width - 1, buttonRectangle.height - 1);
-
-    gc.fillGradientRectangle(fillRectangle.x, fillRectangle.y, fillRectangle.width, fillRectangle.height, true);
-
-    // if there's a background image, draw it on top of the interior color
-    // so any image transparency allows the button colors to come through
-    drawBackgroundImage(gc, fillRectangle);
-
-
-    // draw the border of the button. If a zero-pixel border was specified,
-    // draw a 1-pixel border the same color as the canvas background instead
-    // so the rounded corners look right
-    gc.setLineStyle(SWT.LINE_SOLID);
-
-    int arcHeight = Math.max(cornerRadius, buttonSize.y / 10);
+    /*
+     * draw the outside border
+     */
+    int arcHeight = Math.max(cornerRadius, segmentRectangle.height / 10);
     int arcWidth = arcHeight;
 
     int bw = borderWidth;
@@ -470,57 +437,12 @@ public class SegmentedSquareButton extends Canvas {
       arcWidth = arcHeight += 1;
     }
     if (roundedCorners) {
-      gc.drawRoundRectangle(buttonRectangle.x + (bw - 1), buttonRectangle.y + (bw - 1), buttonRectangle.width - bw, buttonRectangle.height - 2, arcWidth, arcHeight);
+      gc.drawRoundRectangle(segmentRectangle.x + (bw - 1), segmentRectangle.y + (bw - 1), segmentRectangle.width - bw, segmentRectangle.height - 2, arcWidth, arcHeight);
     } else {
-      gc.drawRectangle(buttonRectangle.x, buttonRectangle.y, buttonRectangle.width - bw, buttonRectangle.height - 1);
-    }
-
-    // dotted line selection border around the text, if any
-    if (this.isFocused && this.selectionBorder) {
-      gc.setForeground(defaultCurrentFontColor);
-      gc.setLineStyle(SWT.LINE_DASH);
-      gc.setLineWidth(1);
-      gc.drawRectangle(buttonRectangle.x + (bw + 1), buttonRectangle.y + (bw + 1), buttonRectangle.width - (bw + 5), buttonRectangle.height - (bw + 5));
-    }
-
-    ContentOriginSet contentOriginSet = getContentsOrigin(buttonRectangle);
-    Point textOrigin = contentOriginSet.getTextOrigin();
-    Point imageOrigin = contentOriginSet.getImageOrigin();
-
-    /*
-     * Order of drawing matters... if the image is above or to the left,
-     * it needs to be drawn first.
-     */
-    switch(imagePosition) {
-      case LEFT_OF_TEXT:
-      case ABOVE_TEXT:
-        if(imageOrigin != null) {
-          drawImage(gc, imageOrigin.x, imageOrigin.y);
-        }
-        if(textOrigin != null) {
-          drawText(gc, textOrigin.x, textOrigin.y);
-        }
-        break;
-      case RIGHT_OF_TEXT:
-        if(textOrigin != null) {
-          drawText(gc, textOrigin.x, textOrigin.y);
-        }
-        if(imageOrigin != null) {
-          drawImage(gc, imageOrigin.x, imageOrigin.y);
-        }
-        break;
+      gc.drawRectangle(segmentRectangle.x, segmentRectangle.y, segmentRectangle.width - bw, segmentRectangle.height - 1);
     }
   }
 
-
-
-  int totalLength() {
-
-  }
-
-  int totalHeight() {
-
-  }
 
 
   SegmentedSquareButtonItem findItemBy(Point point) {
@@ -536,95 +458,12 @@ public class SegmentedSquareButton extends Canvas {
   }
 
 
-  Point computeSegmentSize(SegmentedSquareButtonItem item) {
-    return computeSegmentSize(item, SWT.DEFAULT, SWT.DEFAULT, false);
-  }
-
-  public Point computeSegmentSize(SegmentedSquareButtonItem item, int widthHint, int heightHint, boolean changed) {
-    Point size = null;
-    if ((widthHint == SWT.DEFAULT) && (heightHint == SWT.DEFAULT) && !changed &&
-      (lastWidth > 0) && (lastHeight > 0)) {
-      size = new Point(lastWidth, lastHeight);
-    } else {
-      int width = (widthHint != SWT.DEFAULT) ? widthHint : getWidthOfContents() + (innerMarginWidth * 2);
-      int height = (heightHint != SWT.DEFAULT) ? heightHint : getHeightOfContents() + (innerMarginHeight * 2);
-
-      /*
-       * In this case, it's possible that the background image will be small and
-       * your text will get junky... careful with this one, kid.
-       */
-      if ((backgroundImage != null) && (backgroundImageStyle == BG_IMAGE_FIT)) {
-        width = backgroundImage.getBounds().width;
-        height = backgroundImage.getBounds().height;
-      }
-
-      lastWidth = width + 2;
-      lastHeight = height + 2;
-      size = new Point(lastWidth, lastHeight);
-    }
-    return size;
-  }
-
-  public Point computeTextSize(SegmentedSquareButtonItem item) {
-    Point size = null;
-    if (item.getText() != null) {
-      GC gc = new GC(this);
-      gc.setFont(defaultFont);
-      size = gc.textExtent(text, SWT.DRAW_DELIMITER);
-      gc.dispose();
-    }
-    return size;
-  }
-
-  public Point computeImageSize(SegmentedSquareButtonItem item) {
-    Point size = null;
-    if(item.getImage() != null) {
-      Rectangle imageBounds = image.getBounds();
-      size = new Point(imageBounds.width, imageBounds.height);
-    }
-    return size;
-  }
-
-  /**
-   * This is an image that will be displayed to the side of the
-   * text inside the button (if any). By default the image will be
-   * to the left of the text; however, setImageStyle can be used to
-   * specify that it's either to the right or left. If there is no
-   * text, the image will be centered inside the button.
-   *
-   * @param image
-   */
-  public void setImage(Image image) {
-    this.image = image;
-    redraw();
-  }
-  public Image getImage() {
-    return image;
-  }
-
   public int getImagePadding() {
     return imagePadding;
   }
 
   public void setImagePadding(int imagePadding) {
     this.imagePadding = imagePadding;
-  }
-
-
-  /**
-   * This is an image that will be used as a background image for the
-   * button, drawn in the manner specified by the backgroundImageStyle
-   * setting. The order in which the button is drawn is: background
-   * color, then background image, then button image and text. So if the
-   * background image has transparency, the background color will show
-   * through the transparency.
-   */
-  public void setBackgroundImage(Image backgroundImage) {
-    this.backgroundImage = backgroundImage;
-    redraw();
-  }
-  public Image getBackgroundImage() {
-    return backgroundImage;
   }
 
   /**
@@ -655,61 +494,12 @@ public class SegmentedSquareButton extends Canvas {
     return backgroundImageStyle;
   }
 
-  public String getText() {
-    return text;
-  }
-  public void setText(String text) {
-    this.text = text;
-    redraw();
-  }
   public Font getFont() {
     return defaultFont;
   }
   public void setFont(Font font) {
     if (font != null)
       this.defaultFont = font;
-  }
-
-  public boolean isHorizontallyCenterContents() {
-    return horizontallyCenterContents;
-  }
-
-  public void setHorizontallyCenterContents(boolean horizontallyCenterContents) {
-    this.horizontallyCenterContents = horizontallyCenterContents;
-  }
-
-  public boolean isVerticallyCenterContents() {
-    return verticallyCenterContents;
-  }
-
-  public void setVerticallyCenterContents(boolean verticallyCenterContents) {
-    this.verticallyCenterContents = verticallyCenterContents;
-  }
-
-  /**
-   * Set whether or not this button is enabled (active) or
-   * not (inactive). This setting can be changed dynamically
-   * after the button has been drawn.
-   * <p>
-   * An inactive button does not change color
-   * when it is hovered over or clicked, does not receive focus
-   * or participate in the tab order of the widget container,
-   * and does not notify listeners when clicked.
-   */
-  public void setEnabled(boolean enabled) {
-    boolean oldSetting = getEnabled();
-    super.setEnabled(enabled);
-    if (oldSetting != enabled) {
-      if (!enabled) {
-        super.setEnabled(true);
-        this.setInactiveColor();
-        this.setTraversable(false);
-        super.setEnabled(false);
-      } else {
-        this.setNormalColor();
-        this.setTraversable(true);
-      }
-    }
   }
 
 //  public boolean isEnabled() {
@@ -804,7 +594,7 @@ public class SegmentedSquareButton extends Canvas {
   }
 
   public void setDefaultColors(SquareButtonColorGroup squareButtonColorGroup) {
-    setSelectedColors(squareButtonColorGroup.getTopBackgroundColor(),
+    setDefaultColors(squareButtonColorGroup.getTopBackgroundColor(),
       squareButtonColorGroup.getBottomBackgroundColor(),
       squareButtonColorGroup.getBorderColor(),
       squareButtonColorGroup.getFontColor());
@@ -826,7 +616,7 @@ public class SegmentedSquareButton extends Canvas {
   }
 
   public void setDefaultHoverColors(SquareButtonColorGroup squareButtonColorGroup) {
-    setHoverColors(squareButtonColorGroup.getTopBackgroundColor(),
+    setDefaultHoverColors(squareButtonColorGroup.getTopBackgroundColor(),
       squareButtonColorGroup.getBottomBackgroundColor(),
       squareButtonColorGroup.getBorderColor(),
       squareButtonColorGroup.getFontColor());
@@ -848,7 +638,7 @@ public class SegmentedSquareButton extends Canvas {
   }
 
   public void setDefaultClickedColors(SquareButtonColorGroup squareButtonColorGroup) {
-    setClickedColors(squareButtonColorGroup.getTopBackgroundColor(),
+    setDefaultClickedColors(squareButtonColorGroup.getTopBackgroundColor(),
       squareButtonColorGroup.getBottomBackgroundColor(),
       squareButtonColorGroup.getBorderColor(),
       squareButtonColorGroup.getFontColor());
@@ -875,7 +665,7 @@ public class SegmentedSquareButton extends Canvas {
    * @param squareButtonColorGroup
    */
   public void setDefaultSelectedColors(SquareButtonColorGroup squareButtonColorGroup) {
-    setSelectedColors(squareButtonColorGroup.getTopBackgroundColor(),
+    setDefaultSelectedColors(squareButtonColorGroup.getTopBackgroundColor(),
       squareButtonColorGroup.getBottomBackgroundColor(),
       squareButtonColorGroup.getBorderColor(),
       squareButtonColorGroup.getFontColor());
@@ -902,7 +692,7 @@ public class SegmentedSquareButton extends Canvas {
    * @param squareButtonColorGroup
    */
   public void setDefaultInactiveColors(SquareButtonColorGroup squareButtonColorGroup) {
-    setInactiveColors(squareButtonColorGroup.getTopBackgroundColor(),
+    setDefaultInactiveColors(squareButtonColorGroup.getTopBackgroundColor(),
       squareButtonColorGroup.getBottomBackgroundColor(),
       squareButtonColorGroup.getBorderColor(),
       squareButtonColorGroup.getFontColor());
@@ -933,10 +723,11 @@ public class SegmentedSquareButton extends Canvas {
     items.add(index, item);
   }
 
-  protected SegmentedSquareButtonItem findItem(int x, int y) {
+  SegmentedSquareButtonItem findItem(int x, int y) {
     SegmentedSquareButtonItem item = null;
     for(SegmentedSquareButtonItem i : items) {
-      if(i.getRectangle().contains(x,y)) {
+      Rectangle rect = i.getRectangle();
+      if(rect != null && rect.contains(x,y)) {
         item = i;
         break;
       }
@@ -958,7 +749,10 @@ public class SegmentedSquareButton extends Canvas {
     SINGLE
   }
 
-  public class SegmentedSquareButtonItem {
+  public static class SegmentedSquareButtonItem {
+
+    SegmentedSquareButton parent;
+
     String text;
     Image image, backgroundImage;
     String toolTip;
@@ -996,6 +790,11 @@ public class SegmentedSquareButton extends Canvas {
       } else {
         segmentStyle = SegmentStyle.BLANK;
       }
+    }
+
+    void setParent(SegmentedSquareButton parent) {
+      this.parent = parent;
+      setNormalColor();
     }
 
     public String getText() {
@@ -1073,7 +872,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Font getFont() {
       if(font == null) {
-        font = defaultFont;
+        font = parent.defaultFont;
       }
       return font;
     }
@@ -1085,7 +884,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getFontColor() {
       if(fontColor == null) {
-        fontColor = defaultFontColor;
+        fontColor = parent.defaultFontColor;
       }
       return fontColor;
     }
@@ -1097,7 +896,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getHoverFontColor() {
       if(hoverFontColor == null) {
-        hoverFontColor = defaultHoverFontColor;
+        hoverFontColor = parent.defaultHoverFontColor;
       }
       return hoverFontColor;
     }
@@ -1109,7 +908,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getClickedFontColor() {
       if(clickedFontColor == null) {
-        clickedFontColor = defaultClickedFontColor;
+        clickedFontColor = parent.defaultClickedFontColor;
       }
       return clickedFontColor;
     }
@@ -1121,7 +920,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getInactiveFontColor() {
       if(inactiveFontColor == null) {
-        inactiveFontColor = defaultInactiveFontColor;
+        inactiveFontColor = parent.defaultInactiveFontColor;
       }
       return inactiveFontColor;
     }
@@ -1133,7 +932,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getSelectedFontColor() {
       if(selectedFontColor == null) {
-        selectedFontColor = defaultSelectedFontColor;
+        selectedFontColor = parent.defaultSelectedFontColor;
       }
       return selectedFontColor;
     }
@@ -1145,7 +944,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getBorderColor() {
       if(borderColor == null) {
-        borderColor = defaultBorderColor;
+        borderColor = parent.defaultBorderColor;
       }
       return borderColor;
     }
@@ -1157,7 +956,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getHoverBorderColor() {
       if(hoverBorderColor == null) {
-        hoverBorderColor = defaultHoverBorderColor;
+        hoverBorderColor = parent.defaultHoverBorderColor;
       }
       return hoverBorderColor;
     }
@@ -1169,7 +968,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getClickedBorderColor() {
       if(clickedBorderColor == null) {
-        clickedBorderColor = defaultClickedBorderColor;
+        clickedBorderColor = parent.defaultClickedBorderColor;
       }
       return clickedBorderColor;
     }
@@ -1181,7 +980,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getInactiveBorderColor() {
       if(inactiveBorderColor == null) {
-        inactiveBorderColor = defaultInactiveBorderColor;
+        inactiveBorderColor = parent.defaultInactiveBorderColor;
       }
       return inactiveBorderColor;
     }
@@ -1193,7 +992,7 @@ public class SegmentedSquareButton extends Canvas {
 
     public Color getSelectedBorderColor() {
       if(selectedBorderColor == null) {
-        selectedBorderColor = defaultSelectedBorderColor;
+        selectedBorderColor = parent.defaultSelectedBorderColor;
       }
       return selectedBorderColor;
     }
@@ -1341,12 +1140,12 @@ public class SegmentedSquareButton extends Canvas {
       setMouseEventColor(getSelectedColor(), getSelectedColor2(), getSelectedBorderColor(), getSelectedFontColor());
     }
     protected void setMouseEventColor(Color topBackgroundColor, Color bottomBackgroundColor, Color borderColor, Color fontColor) {
-      if (!getEnabled())
+      if (!parent.getEnabled()) // this should probably be moved
         return;
 
       if (currentColor == null) {
-        currentColor = defaultBackgroundColor;
-        currentColor2 = defaultBackgroundColor2;
+        currentColor = parent.defaultBackgroundColor;
+        currentColor2 = parent.defaultBackgroundColor2;
         currentBorderColor = borderColor;
         currentFontColor = fontColor;
       }
@@ -1361,14 +1160,14 @@ public class SegmentedSquareButton extends Canvas {
         redrawFlag = true;
       }
       if ((borderColor != null) && (!currentBorderColor.equals(borderColor))) {
-        defaultCurrentBorderColor = borderColor;
+        parent.defaultCurrentBorderColor = borderColor;
         redrawFlag = true;
       }
       if ((fontColor != null) && (!currentFontColor.equals(fontColor))) {
         currentFontColor = fontColor;
         redrawFlag = true;
       }
-      if (redrawFlag) { redraw(); }
+      if (redrawFlag) { parent.redraw(); } // move redraw
     }
 
     void mouseDoubleClickEventRecieved() {
@@ -1422,14 +1221,14 @@ public class SegmentedSquareButton extends Canvas {
         (lastWidth > 0) && (lastHeight > 0)) {
         size = new Point(lastWidth, lastHeight);
       } else {
-        int width = (widthHint != SWT.DEFAULT) ? widthHint : getWidthOfContents() + (innerMarginWidth * 2);
-        int height = (heightHint != SWT.DEFAULT) ? heightHint : getHeightOfContents() + (innerMarginHeight * 2);
+        int width = (widthHint != SWT.DEFAULT) ? widthHint : getWidthOfContents() + (parent.innerMarginWidth * 2);
+        int height = (heightHint != SWT.DEFAULT) ? heightHint : getHeightOfContents() + (parent.innerMarginHeight * 2);
 
       /*
        * In this case, it's possible that the background image will be small and
        * your text will get junky... careful with this one, kid.
        */
-        if ((backgroundImage != null) && (backgroundImageStyle == BG_IMAGE_FIT)) {
+        if ((backgroundImage != null) && (parent.backgroundImageStyle == BG_IMAGE_FIT)) {
           width = backgroundImage.getBounds().width;
           height = backgroundImage.getBounds().height;
         }
@@ -1444,8 +1243,8 @@ public class SegmentedSquareButton extends Canvas {
     Point computeTextSize() {
       Point size = null;
       if (text != null) {
-        GC gc = new GC(SegmentedSquareButton.this);
-        gc.setFont(defaultFont);
+        GC gc = new GC(parent);
+        gc.setFont(parent.defaultFont);
         size = gc.textExtent(text, SWT.DRAW_DELIMITER);
         gc.dispose();
       }
@@ -1483,7 +1282,7 @@ public class SegmentedSquareButton extends Canvas {
         switch(imagePosition) {
           case LEFT_OF_TEXT:
           case RIGHT_OF_TEXT:
-            widthOfContents = imageWidth + imagePadding + textWidth;
+            widthOfContents = imageWidth + parent.imagePadding + textWidth;
             break;
           case ABOVE_TEXT:
             widthOfContents = Math.max(textWidth, imageWidth);
@@ -1494,9 +1293,6 @@ public class SegmentedSquareButton extends Canvas {
       return lastWidthOfContents;
     }
 
-    static int adjustWidthForSegmentType(int width) {
-
-    }
 
     /**
      * for LEFT_OF_TEXT and RIGHT_OF_TEXT
@@ -1506,7 +1302,7 @@ public class SegmentedSquareButton extends Canvas {
      *  heightOfContents = imageHeight + imagePadding + textHeight
      * @return
      */
-    int getHeightOfContents(SegmentedSquareButtonItem item) {
+    int getHeightOfContents() {
       if(lastHeightOfContents == 0) {
         int heightOfContents = 0;
 
@@ -1522,7 +1318,7 @@ public class SegmentedSquareButton extends Canvas {
             heightOfContents = Math.max(textHeight, imageHeight);
             break;
           case ABOVE_TEXT:
-            heightOfContents = imageHeight + imagePadding + textHeight;
+            heightOfContents = imageHeight + parent.imagePadding + textHeight;
             break;
         }
         lastHeightOfContents = heightOfContents;
@@ -1588,15 +1384,15 @@ public class SegmentedSquareButton extends Canvas {
          *  |_______________________________________|
          */
 
-          imageX = (horizontallyCenterContents) ? rectangle.width/2 - widthOfContents/2 : innerMarginWidth;
-          textX = imageX + imageSize.x + imagePadding;
+          imageX = (horizontallyCenterContents) ? rectangle.width/2 - widthOfContents/2 : parent.innerMarginWidth;
+          textX = imageX + imageSize.x + parent.imagePadding;
 
           // anchor height based on the image, if the image is the taller of the two... BUT that might not always be the case
           if(imageTaller) {
-            imageY = (verticallyCenterContents) ? rectangle.height/2 - imageSize.y/2 : innerMarginHeight;
+            imageY = (verticallyCenterContents) ? rectangle.height/2 - imageSize.y/2 : parent.innerMarginHeight;
             textY = imageY + imageSize.y/2 - textSize.y/2;
           } else {
-            textY = (verticallyCenterContents) ? rectangle.height/2 - textSize.y/2 : innerMarginHeight;
+            textY = (verticallyCenterContents) ? rectangle.height/2 - textSize.y/2 : parent.innerMarginHeight;
             imageY = textY + textSize.y/2 - imageSize.y/2;
           }
 
@@ -1626,15 +1422,15 @@ public class SegmentedSquareButton extends Canvas {
          *  |                            |          |
          *  |_______________________________________|
          */
-          textX = (horizontallyCenterContents) ? rectangle.width/2 - widthOfContents/2 : innerMarginWidth;
-          imageX = textX + textSize.x + imagePadding;
+          textX = (horizontallyCenterContents) ? rectangle.width/2 - widthOfContents/2 : parent.innerMarginWidth;
+          imageX = textX + textSize.x + parent.imagePadding;
 
           // anchor height based on the image, if the image is the taller of the two... BUT that might not always be the case
           if(imageTaller) {
-            imageY = (verticallyCenterContents) ? rectangle.height/2 - imageSize.y/2 : innerMarginHeight;
+            imageY = (verticallyCenterContents) ? rectangle.height/2 - imageSize.y/2 : parent.innerMarginHeight;
             textY = imageY + imageSize.y/2 - textSize.y/2;
           } else {
-            textY = (verticallyCenterContents) ? rectangle.height/2 - textSize.y/2 : innerMarginHeight;
+            textY = (verticallyCenterContents) ? rectangle.height/2 - textSize.y/2 : parent.innerMarginHeight;
             imageY = textY + textSize.y/2 - imageSize.y/2;
           }
           break;
@@ -1673,15 +1469,15 @@ public class SegmentedSquareButton extends Canvas {
          *  |                         |
          *  |_________________________|
          */
-          imageY = (verticallyCenterContents) ? rectangle.height/2 - heightOfContents/2 : innerMarginHeight;
-          textY = imageY + imageSize.y + imagePadding;
+          imageY = (verticallyCenterContents) ? rectangle.height/2 - heightOfContents/2 : parent.innerMarginHeight;
+          textY = imageY + imageSize.y + parent.imagePadding;
 
           // anchor width based on the image only if the image is wider, probably not likely but possible
           if(imageWider) {
-            imageX = (horizontallyCenterContents) ? rectangle.width/2 - imageSize.x/2 : innerMarginWidth;
+            imageX = (horizontallyCenterContents) ? rectangle.width/2 - imageSize.x/2 : parent.innerMarginWidth;
             textX = imageX + imageSize.x/2 - textSize.x/2;
           } else {
-            textX = (horizontallyCenterContents) ? rectangle.width/2 - textSize.x/2 : innerMarginWidth;
+            textX = (horizontallyCenterContents) ? rectangle.width/2 - textSize.x/2 : parent.innerMarginWidth;
             imageX = textX + textSize.x/2 - imageSize.x/2;
           }
           break;
@@ -1691,12 +1487,147 @@ public class SegmentedSquareButton extends Canvas {
       return new ContentOriginSet(imageOrigin, textOrigin);
     }
 
+    Point computeSize() {
+      return new Point(getWidthOfContents(), getHeightOfContents());
+    }
+
     void paintControl(SegmentedSquareButtonItem lastItem, PaintEvent paintEvent) {
 
-        Point segmentSize = computeSize();
-        Rectangle segmentRectangle = new Rectangle(0, 0, segmentSize.x, segmentSize.y);
+      Point segmentSize = computeSize();
+      int originX = (lastItem != null) ? lastItem.getRectangle().x + lastItem.getRectangle().width : 0;
+      int originY = (lastItem != null) ? lastItem.getRectangle().y : 0;
+      Rectangle segmentRectangle = new Rectangle(originX, originY, segmentSize.x, segmentSize.y);
 
-        GC gc = paintEvent.gc;
+      GC gc = paintEvent.gc;
+
+      //try and enable nice looking fonts on windows
+      try {
+        gc.setAdvanced(true);
+        gc.setAntialias(SWT.ON);
+        gc.setTextAntialias(SWT.ON);
+        gc.setInterpolation(SWT.HIGH);
+      } catch (SWTException exception) {
+        log.warning("Couldn't get nice fonts: " + exception.getMessage());
+      }
+
+      // add transparency by making the canvas background the same as
+      // the parent background (only needed for rounded corners)
+      if (parent.roundedCorners) {
+        gc.setBackground(parent.getParent().getBackground());
+        gc.fillRectangle(segmentRectangle);
+      }
+
+      // draw the background color of the inside of the button. There's no such
+      // thing as a rounded gradient rectangle in SWT, so we need to draw a filled
+      // rectangle that's just the right size to fit inside a rounded rectangle
+      // without spilling out at the corners
+      gc.setForeground(this.currentColor);
+      gc.setBackground(this.currentColor2);
+
+
+      boolean drawLine = false;
+
+      int actualWidth = 0;
+      int actualHeight = 0;
+
+      int rectX = segmentRectangle.x + 1;
+      int rectY = segmentRectangle.y + 1;
+
+      switch(segmentType) {
+        case LEFT_END:
+          if(parent.roundedCorners) {
+            actualWidth = segmentRectangle.width - 1;
+            actualHeight = segmentRectangle.height - 3;
+          } else {
+            actualWidth = segmentRectangle.width - 1;
+            actualHeight = segmentRectangle.height - 1;
+          }
+          drawLine = true;
+          break;
+        case RIGHT_END:
+          if(parent.roundedCorners) {
+            actualWidth = segmentRectangle.width - 2;
+            actualHeight = segmentRectangle.height - 3;
+          } else {
+            actualWidth = segmentRectangle.width - 1;
+            actualHeight = segmentRectangle.height - 1;
+          }
+          break;
+        case CENTER:
+          actualWidth = segmentRectangle.width - 1;
+          actualHeight = segmentRectangle.height - 3;
+          drawLine = true;
+          break;
+        case SINGLE:
+          if(parent.roundedCorners) {
+            actualWidth = segmentRectangle.width - 2;
+            actualHeight = segmentRectangle.height - 3;
+          } else {
+            actualWidth = segmentRectangle.width - 1;
+            actualHeight = segmentRectangle.height - 1;
+          }
+          break;
+      }
+
+      Rectangle fillRectangle = new Rectangle(rectX, rectY, actualWidth, actualHeight);
+      gc.fillGradientRectangle(fillRectangle.x, fillRectangle.y, fillRectangle.width, fillRectangle.height, true);
+
+      // if there's a background image, draw it on top of the interior color
+      // so any image transparency allows the button colors to come through
+      drawBackgroundImage(gc, fillRectangle);
+
+
+      // draw the border of the button. If a zero-pixel border was specified,
+      // draw a 1-pixel border the same color as the canvas background instead
+      // so the rounded corners look right
+      gc.setLineStyle(SWT.LINE_SOLID);
+
+      rectangle = fillRectangle;
+
+      if(drawLine) {
+        int bw = (parent.borderWidth > 0) ? parent. borderWidth : 1;
+        gc.setLineWidth(bw);
+        gc.setForeground(this.currentColor);
+        gc.drawLine(segmentRectangle.x, segmentRectangle.y,
+            segmentRectangle.width + segmentRectangle.x,
+            segmentRectangle.height + segmentRectangle.y);
+      }
+
+      // dotted line selection border around the text, if any
+//      if (this.isFocused && this.selectionBorder) {
+//        gc.setForeground(defaultCurrentFontColor);
+//        gc.setLineStyle(SWT.LINE_DASH);
+//        gc.setLineWidth(1);
+//        gc.drawRectangle(buttonRectangle.x + (bw + 1), buttonRectangle.y + (bw + 1), buttonRectangle.width - (bw + 5), buttonRectangle.height - (bw + 5));
+//      }
+
+      ContentOriginSet contentOriginSet = getContentsOrigin(segmentRectangle);
+      Point textOrigin = contentOriginSet.getTextOrigin();
+      Point imageOrigin = contentOriginSet.getImageOrigin();
+
+    /*
+     * Order of drawing matters... if the image is above or to the left,
+     * it needs to be drawn first.
+     */
+      switch(imagePosition) {
+        case LEFT_OF_TEXT:
+        case ABOVE_TEXT:
+          if(imageOrigin != null) {
+            drawImage(gc, imageOrigin.x, imageOrigin.y);
+          }
+          if(textOrigin != null) {
+            drawText(gc, textOrigin.x, textOrigin.y);
+          }
+          break;
+        case RIGHT_OF_TEXT:
+          if(textOrigin != null) {
+            drawText(gc, textOrigin.x, textOrigin.y);
+          }
+          if(imageOrigin != null) {
+            drawImage(gc, imageOrigin.x, imageOrigin.y);
+          }
+          break;
+      }
 
     }
 
@@ -1709,8 +1640,8 @@ public class SegmentedSquareButton extends Canvas {
     }
 
     void drawText(GC gc, int x, int y) {
-      gc.setFont(defaultFont);
-      gc.setForeground(defaultCurrentFontColor);
+      gc.setFont(parent.defaultFont);
+      gc.setForeground(parent.defaultCurrentFontColor);
       gc.drawText(text, x, y, SWT.DRAW_TRANSPARENT | SWT.DRAW_DELIMITER);
     }
 
@@ -1719,7 +1650,7 @@ public class SegmentedSquareButton extends Canvas {
       if (image == null)
         return x;
       gc.drawImage(image, x, y);
-      return x + image.getBounds().width + imagePadding;
+      return x + image.getBounds().width + parent.imagePadding;
     }
 
     void drawBackgroundImage(GC gc, Rectangle rect) {
@@ -1728,10 +1659,10 @@ public class SegmentedSquareButton extends Canvas {
 
       Rectangle imgBounds = backgroundImage.getBounds();
 
-      if (backgroundImageStyle == BG_IMAGE_STRETCH) {
+      if (parent.backgroundImageStyle == BG_IMAGE_STRETCH) {
         gc.drawImage(backgroundImage, 0, 0, imgBounds.width, imgBounds.height, rect.x, rect.y, rect.width, rect.height);
 
-      } else if (backgroundImageStyle == BG_IMAGE_CENTER) {
+      } else if (parent.backgroundImageStyle == BG_IMAGE_CENTER) {
         int x = (imgBounds.width - rect.width) / 2;
         int y = (imgBounds.height - rect.height) / 2;
         Rectangle centerRect = new Rectangle(rect.x, rect.y, rect.width, rect.height);
@@ -1745,7 +1676,7 @@ public class SegmentedSquareButton extends Canvas {
         }
         drawClippedImage(gc, backgroundImage, x, y, centerRect);
 
-      } else if (backgroundImageStyle == BG_IMAGE_TILE) {
+      } else if (parent.backgroundImageStyle == BG_IMAGE_TILE) {
         for (int y = 0; y < rect.height; y += imgBounds.height) {
           Rectangle tileRect = new Rectangle(rect.x, y + rect.y, rect.width, rect.height-y);
 
@@ -1770,6 +1701,30 @@ public class SegmentedSquareButton extends Canvas {
         return width;
       }
       return 0;
+    }
+
+    /**
+     * Set whether or not this button is enabled (active) or
+     * not (inactive). This setting can be changed dynamically
+     * after the button has been drawn.
+     * <p>
+     * An inactive button does not change color
+     * when it is hovered over or clicked, does not receive focus
+     * or participate in the tab order of the widget container,
+     * and does not notify listeners when clicked.
+     */
+    public void setEnabled(boolean enabled) {
+      boolean oldSetting = parent.getEnabled();
+//      super.setEnabled(enabled);
+      if (oldSetting != enabled) {
+        if (!enabled) {
+//          super.setEnabled(true);
+          this.setInactiveColor();
+//          super.setEnabled(false);
+        } else {
+          this.setNormalColor();
+        }
+      }
     }
 
     public void mouseDoubleClick() { }
@@ -1963,7 +1918,7 @@ public class SegmentedSquareButton extends Canvas {
         button.setImage(image);
       }
 
-      button.setImagePosition(imagePosition);
+//      button.setImagePosition(imagePosition);
       button.setHorizontallyCenterContents(horizontallyCenterContents);
       button.setVerticallyCenterContents(verticallyCenterContents);
 

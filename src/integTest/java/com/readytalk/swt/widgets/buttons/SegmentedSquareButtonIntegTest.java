@@ -22,10 +22,10 @@ public class SegmentedSquareButtonIntegTest {
 
     shell.open();
 
-    SegmentedSquareButton buttonGroup = new SegmentedSquareButton(shell, SWT.CENTER,
-     new SegmentedSquareButton.SegmentedSquareButtonItem().setText(leftButtonText),
-     new SegmentedSquareButton.SegmentedSquareButtonItem().setText(centerButtonText),
-     new SegmentedSquareButton.SegmentedSquareButtonItem().setText(rightButtonText));
+//    SegmentedSquareButton buttonGroup = new SegmentedSquareButton(shell, SWT.CENTER,
+//     new SegmentedSquareButton.SegmentedSquareButtonItem().setText(leftButtonText),
+//     new SegmentedSquareButton.SegmentedSquareButtonItem().setText(centerButtonText),
+//     new SegmentedSquareButton.SegmentedSquareButtonItem().setText(rightButtonText));
 
     shell.close();
     display.dispose();

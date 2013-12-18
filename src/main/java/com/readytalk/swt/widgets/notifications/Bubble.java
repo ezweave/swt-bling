@@ -24,7 +24,7 @@ import org.eclipse.swt.widgets.Widget;
 
 import java.util.logging.Logger;
 
-/** 
+/**
  * Instances of this class represent contextual information about a UI element.<br/>
  * <br/>
  * Bubble will attempt to always be visible on screen.<br/>
