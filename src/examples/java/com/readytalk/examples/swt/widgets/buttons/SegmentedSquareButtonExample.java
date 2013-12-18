@@ -39,7 +39,7 @@ public class SegmentedSquareButtonExample implements SwtBlingExample {
       t.printStackTrace();
     }
 
-    shell.setSize(200, 200);
+    shell.setSize(800, 200);
     shell.open();
     while (!shell.isDisposed()) {
       if (!DISPLAY.readAndDispatch()) {
